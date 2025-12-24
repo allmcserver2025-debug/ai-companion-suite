@@ -1,12 +1,12 @@
-import { pipeline, env } from '@huggingface/transformers';
+import { supabase } from "@/integrations/supabase/client";
 
-// Configure transformers.js
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+const MAX_IMAGE_DIMENSION = 1536;
 
-const MAX_IMAGE_DIMENSION = 1024;
-
-function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, image: HTMLImageElement) {
+function resizeImageIfNeeded(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement
+) {
   let width = image.naturalWidth;
   let height = image.naturalHeight;
 
@@ -31,75 +31,40 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
   return false;
 }
 
-let backgroundRemover: any | null = null;
-
-const getBackgroundRemover = async () => {
-  if (backgroundRemover) return backgroundRemover;
-
-  try {
-    // High-quality background removal model (works locally in-browser)
-    backgroundRemover = await pipeline('background-removal', 'briaai/RMBG-1.4', {
-      device: 'webgpu',
-    });
-  } catch (e) {
-    console.warn('Failed to load briaai/RMBG-1.4, falling back to Xenova/modnet', e);
-    backgroundRemover = await pipeline('background-removal', 'Xenova/modnet', {
-      device: 'webgpu',
-    });
-  }
-
-  return backgroundRemover;
-};
-
 export const removeBackground = async (imageElement: HTMLImageElement): Promise<Blob> => {
   try {
-    console.log('Starting background removal process...');
+    console.log("Starting background removal process...");
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get canvas context');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not get canvas context");
 
-    const wasResized = resizeImageIfNeeded(canvas, ctx, imageElement);
-    console.log(
-      `Image ${wasResized ? 'was' : 'was not'} resized. Final dimensions: ${canvas.width}x${canvas.height}`
-    );
+    resizeImageIfNeeded(canvas, ctx, imageElement);
+    console.log(`Image dimensions: ${canvas.width}x${canvas.height}`);
 
-    const imageData = canvas.toDataURL('image/png');
+    const imageBase64 = canvas.toDataURL("image/png");
 
-    const remover = await getBackgroundRemover();
-    console.log('Processing with background removal model...');
+    console.log("Calling background removal API...");
+    const { data, error } = await supabase.functions.invoke("remove-background", {
+      body: { imageBase64 },
+    });
 
-    const output = await remover(imageData);
-
-    if (!output || !Array.isArray(output) || !output[0]?.data) {
-      throw new Error('Invalid background removal result');
+    if (error) {
+      console.error("Edge function error:", error);
+      throw new Error(error.message || "Failed to remove background");
     }
 
-    const result = output[0];
+    if (!data?.image) {
+      throw new Error("No image returned from API");
+    }
 
-    const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = result.width;
-    outputCanvas.height = result.height;
-    const outputCtx = outputCanvas.getContext('2d');
-    if (!outputCtx) throw new Error('Could not get output canvas context');
+    console.log("Converting result to blob...");
+    const response = await fetch(data.image);
+    const blob = await response.blob();
 
-    const pixels = new Uint8ClampedArray(result.data);
-    const imageDataOut = new ImageData(pixels, result.width, result.height);
-
-    outputCtx.putImageData(imageDataOut, 0, 0);
-
-    return await new Promise((resolve, reject) => {
-      outputCanvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Failed to create blob'));
-        },
-        'image/png',
-        1.0
-      );
-    });
+    return blob;
   } catch (error) {
-    console.error('Error removing background:', error);
+    console.error("Error removing background:", error);
     throw error;
   }
 };
