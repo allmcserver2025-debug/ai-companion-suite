@@ -31,67 +31,68 @@ function resizeImageIfNeeded(canvas: HTMLCanvasElement, ctx: CanvasRenderingCont
   return false;
 }
 
+let backgroundRemover: any | null = null;
+
+const getBackgroundRemover = async () => {
+  if (backgroundRemover) return backgroundRemover;
+
+  try {
+    // High-quality background removal model (works locally in-browser)
+    backgroundRemover = await pipeline('background-removal', 'briaai/RMBG-1.4', {
+      device: 'webgpu',
+    });
+  } catch (e) {
+    console.warn('Failed to load briaai/RMBG-1.4, falling back to Xenova/modnet', e);
+    backgroundRemover = await pipeline('background-removal', 'Xenova/modnet', {
+      device: 'webgpu',
+    });
+  }
+
+  return backgroundRemover;
+};
+
 export const removeBackground = async (imageElement: HTMLImageElement): Promise<Blob> => {
   try {
     console.log('Starting background removal process...');
-    
-    // Use the segmentation model - this downloads the model on first use
-    const segmenter = await pipeline(
-      'image-segmentation', 
-      'Xenova/segformer-b0-finetuned-ade-512-512',
-      { device: 'webgpu' }
-    );
-    
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    
     if (!ctx) throw new Error('Could not get canvas context');
-    
+
     const wasResized = resizeImageIfNeeded(canvas, ctx, imageElement);
-    console.log(`Image ${wasResized ? 'was' : 'was not'} resized. Final dimensions: ${canvas.width}x${canvas.height}`);
-    
-    const imageData = canvas.toDataURL('image/jpeg', 0.8);
-    console.log('Image converted to base64');
-    
-    console.log('Processing with segmentation model...');
-    const result = await segmenter(imageData);
-    
-    console.log('Segmentation result:', result);
-    
-    if (!result || !Array.isArray(result) || result.length === 0 || !result[0].mask) {
-      throw new Error('Invalid segmentation result');
+    console.log(
+      `Image ${wasResized ? 'was' : 'was not'} resized. Final dimensions: ${canvas.width}x${canvas.height}`
+    );
+
+    const imageData = canvas.toDataURL('image/png');
+
+    const remover = await getBackgroundRemover();
+    console.log('Processing with background removal model...');
+
+    const output = await remover(imageData);
+
+    if (!output || !Array.isArray(output) || !output[0]?.data) {
+      throw new Error('Invalid background removal result');
     }
-    
+
+    const result = output[0];
+
     const outputCanvas = document.createElement('canvas');
-    outputCanvas.width = canvas.width;
-    outputCanvas.height = canvas.height;
+    outputCanvas.width = result.width;
+    outputCanvas.height = result.height;
     const outputCtx = outputCanvas.getContext('2d');
-    
     if (!outputCtx) throw new Error('Could not get output canvas context');
-    
-    outputCtx.drawImage(canvas, 0, 0);
-    
-    const outputImageData = outputCtx.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
-    const data = outputImageData.data;
-    
-    // Apply mask to alpha channel
-    for (let i = 0; i < result[0].mask.data.length; i++) {
-      const alpha = Math.round((1 - result[0].mask.data[i]) * 255);
-      data[i * 4 + 3] = alpha;
-    }
-    
-    outputCtx.putImageData(outputImageData, 0, 0);
-    console.log('Mask applied successfully');
-    
-    return new Promise((resolve, reject) => {
+
+    const pixels = new Uint8ClampedArray(result.data);
+    const imageDataOut = new ImageData(pixels, result.width, result.height);
+
+    outputCtx.putImageData(imageDataOut, 0, 0);
+
+    return await new Promise((resolve, reject) => {
       outputCanvas.toBlob(
         (blob) => {
-          if (blob) {
-            console.log('Successfully created final blob');
-            resolve(blob);
-          } else {
-            reject(new Error('Failed to create blob'));
-          }
+          if (blob) resolve(blob);
+          else reject(new Error('Failed to create blob'));
         },
         'image/png',
         1.0
