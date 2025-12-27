@@ -1,6 +1,6 @@
 # AI Multitools Web Application
 
-## Project Overview
+### Project Overview
 This project is a modern web application developed to understand and demonstrate current frontend development practices. The application is structured in a modular and scalable way and uses industry-standard tools and configurations.
 
 ---
