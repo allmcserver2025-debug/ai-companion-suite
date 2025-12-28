@@ -4,7 +4,7 @@ import { ArrowLeft, Upload, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { toast } from "sonner";
-import { removeBackground, loadImage } from "@/lib/backgroundRemoval";
+import { removeBackground } from "@/lib/backgroundRemoval";
 
 const BackgroundRemover = () => {
   const navigate = useNavigate();
@@ -37,17 +37,15 @@ const BackgroundRemover = () => {
     const loadingToast = toast.loading("Removing background... This may take a moment.");
     
     try {
-      const img = await loadImage(selectedFile);
-      const resultBlob = await removeBackground(img);
-      const resultUrl = URL.createObjectURL(resultBlob);
-      
+      const resultUrl = await removeBackground(selectedFile);
       setProcessedImage(resultUrl);
       toast.dismiss(loadingToast);
       toast.success("Background removed successfully!");
     } catch (error) {
       console.error("Error removing background:", error);
       toast.dismiss(loadingToast);
-      toast.error("Failed to remove background. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to remove background";
+      toast.error(errorMessage);
     } finally {
       setIsProcessing(false);
     }
@@ -84,7 +82,7 @@ const BackgroundRemover = () => {
             Background Remover
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Remove backgrounds from images instantly using the RMBG AI model — 100% free, no downloads required.
+            Remove backgrounds from images instantly using the RMBG-2.0 AI model — 100% free, no downloads required.
           </p>
         </div>
 
@@ -169,7 +167,7 @@ const BackgroundRemover = () => {
         <div className="container mx-auto px-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
             <p className="text-muted-foreground">
-              Background Remover - Powered by AI in your browser
+              Background Remover - Powered by RMBG-2.0 AI
             </p>
             <p className="text-muted-foreground/80 font-light tracking-wide">
               Created by <span className="font-semibold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">Ziyad</span>

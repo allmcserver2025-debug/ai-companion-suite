@@ -15,84 +15,72 @@ serve(async (req) => {
 
     if (!imageBase64) {
       return new Response(
-        JSON.stringify({ error: "No image provided" }),
+        JSON.stringify({ error: "Image data is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) {
-      throw new Error("LOVABLE_API_KEY not configured");
+    const HF_TOKEN = Deno.env.get("HUGGING_FACE_ACCESS_TOKEN");
+    if (!HF_TOKEN) {
+      console.error("HUGGING_FACE_ACCESS_TOKEN is not configured");
+      return new Response(
+        JSON.stringify({ error: "HuggingFace API token not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log("Processing background removal with Gemini...");
+    // Convert base64 to blob
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const imageBlob = new Blob([bytes], { type: "image/png" });
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Remove the background from this image completely. Keep only the main subject/foreground elements with a transparent background. Make sure to preserve all details of the subject including edges, text, logos, and fine details. Output a clean cutout with transparent background.",
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
-        modalities: ["image", "text"],
-      }),
-    });
+    console.log("Removing background with RMBG-2.0 model");
+
+    // Use HuggingFace inference API for background removal
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/briaai/RMBG-2.0",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${HF_TOKEN}`,
+        },
+        body: imageBlob,
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Gemini API error:", response.status, errorText);
+      console.error("HuggingFace API error:", response.status, errorText);
       
-      if (response.status === 402) {
+      if (response.status === 503) {
         return new Response(
-          JSON.stringify({ error: "You've run out of Lovable AI credits. Please add funds in Settings → Workspace → Usage." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Model is loading. Please try again in a few seconds." }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please wait a moment and try again." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      throw new Error(`API request failed: ${response.status}`);
+      throw new Error(`HuggingFace API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log("Gemini response received");
+    const resultBlob = await response.blob();
+    const arrayBuffer = await resultBlob.arrayBuffer();
+    const resultBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const resultUrl = `data:image/png;base64,${resultBase64}`;
 
-    const resultImage = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!resultImage) {
-      throw new Error("No image returned from API");
-    }
+    console.log("Background removed successfully");
 
     return new Response(
-      JSON.stringify({ image: resultImage }),
+      JSON.stringify({ image: resultUrl }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: unknown) {
-    console.error("Error:", error);
-    const message = error instanceof Error ? error.message : "Failed to remove background";
+
+  } catch (error) {
+    console.error("Error removing background:", error);
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({ error: error instanceof Error ? error.message : "Failed to remove background" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
