@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,57 +14,43 @@ serve(async (req) => {
   try {
     const { prompt, style, aspectRatio, quality } = await req.json();
     
-    console.log('Generating image with prompt:', prompt);
+    if (!prompt) {
+      return new Response(
+        JSON.stringify({ error: "Prompt is required" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    console.log('Generating image with FLUX.1-dev model:', prompt);
+    
+    const HF_TOKEN = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN');
+    if (!HF_TOKEN) {
+      console.error('HUGGING_FACE_ACCESS_TOKEN is not configured');
+      return new Response(
+        JSON.stringify({ error: 'HuggingFace API token not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image',
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-        modalities: ['image', 'text'],
-      }),
+    const hf = new HfInference(HF_TOKEN);
+
+    // Enhance prompt with style
+    let enhancedPrompt = prompt;
+    if (style && style !== "realistic") {
+      enhancedPrompt = `${prompt}, ${style} style`;
+    }
+
+    const image = await hf.textToImage({
+      inputs: enhancedPrompt,
+      model: "black-forest-labs/FLUX.1-dev",
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('AI Gateway error:', response.status, errorText);
-      
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'Payment required. Please add credits to your workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      throw new Error(`AI Gateway error: ${response.status}`);
-    }
+    // Convert blob to base64
+    const arrayBuffer = await image.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const imageUrl = `data:image/png;base64,${base64}`;
 
-    const aiResponse = await response.json();
-    console.log('AI Response received');
-    
-    // Extract the image URL from the response
-    const imageUrl = aiResponse.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-    
-    if (!imageUrl) {
-      console.error('No image in response:', JSON.stringify(aiResponse));
-      throw new Error('No image was generated');
-    }
+    console.log('Image generated successfully');
 
     return new Response(
       JSON.stringify({ imageUrl }),
