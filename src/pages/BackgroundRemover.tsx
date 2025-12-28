@@ -84,7 +84,7 @@ const BackgroundRemover = () => {
             Background Remover
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Remove backgrounds from images instantly using a high-quality model — runs locally in your browser.
+            Remove backgrounds from images instantly using the RMBG AI model — 100% free, no downloads required.
           </p>
         </div>
 
