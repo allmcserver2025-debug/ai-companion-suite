@@ -13,6 +13,7 @@ interface PresentationData {
     title: string;
     content: string[];
     speakerNotes: string;
+    imageBase64?: string;
   }>;
 }
 
@@ -251,6 +252,11 @@ export const PresentationForm = () => {
         line: { type: "none" }
       });
       
+      // Determine layout based on whether we have an image
+      const hasImage = slideData.imageBase64;
+      const contentWidth = hasImage ? 5.5 : 7.8;
+      const contentX = 1.0;
+      
       slideData.content.forEach((point, pointIndex) => {
         const yPos = 2.0 + (pointIndex * 0.65);
         
@@ -262,9 +268,9 @@ export const PresentationForm = () => {
           });
           
           slide.addText(point, {
-            x: 1.0,
+            x: contentX,
             y: yPos,
-            w: 7.8,
+            w: contentWidth,
             h: 0.55,
             fontSize: 16,
             color: theme.text,
@@ -273,6 +279,22 @@ export const PresentationForm = () => {
           });
         }
       });
+      
+      // Add AI-generated image if available
+      if (slideData.imageBase64) {
+        try {
+          slide.addImage({
+            data: slideData.imageBase64,
+            x: 6.8,
+            y: 1.8,
+            w: 2.8,
+            h: 2.8,
+            rounding: true
+          });
+        } catch (imgError) {
+          console.error('Failed to add image to slide:', imgError);
+        }
+      }
       
       slide.addText(`${index + 1}`, {
         x: 9.2,
