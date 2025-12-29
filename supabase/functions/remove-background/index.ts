@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { InferenceClient } from "https://esm.sh/@huggingface/inference";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,40 +20,77 @@ serve(async (req) => {
       );
     }
 
-    const HF_TOKEN = Deno.env.get("HUGGING_FACE_ACCESS_TOKEN");
-    if (!HF_TOKEN) {
-      console.error("HUGGING_FACE_ACCESS_TOKEN is not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      console.error("LOVABLE_API_KEY is not configured");
       return new Response(
-        JSON.stringify({ error: "HuggingFace API token not configured" }),
+        JSON.stringify({ error: "API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Convert base64 to blob
-    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const imageBlob = new Blob([bytes], { type: "image/png" });
+    console.log("Removing background using Lovable AI (Gemini)");
 
-    console.log("Removing background with RMBG-1.4 model");
-
-    const hf = new InferenceClient(HF_TOKEN);
-
-    const resultBlob = await hf.imageToImage({
-      model: "briaai/RMBG-1.4",
-      inputs: imageBlob,
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-image-preview",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Remove the background from this image completely. Make the background fully transparent (alpha channel = 0). Keep only the main subject/foreground object with clean edges. Output just the image with transparent background, no explanation needed."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageBase64
+                }
+              }
+            ]
+          }
+        ],
+        modalities: ["image", "text"]
+      }),
     });
-    const arrayBuffer = await resultBlob.arrayBuffer();
-    const resultBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-    const resultUrl = `data:image/png;base64,${resultBase64}`;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Lovable AI error:", response.status, errorText);
+      
+      if (response.status === 429) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "Payment required. Please add credits to your workspace." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      throw new Error(`AI error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const resultImage = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    if (!resultImage) {
+      console.error("No image in response:", JSON.stringify(data));
+      throw new Error("No image returned from AI");
+    }
 
     console.log("Background removed successfully");
 
     return new Response(
-      JSON.stringify({ image: resultUrl }),
+      JSON.stringify({ image: resultImage }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
