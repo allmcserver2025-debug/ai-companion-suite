@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { InferenceClient } from "https://esm.sh/@huggingface/inference";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,32 +41,12 @@ serve(async (req) => {
 
     console.log("Removing background with RMBG-1.4 model");
 
-    // Use HuggingFace inference API for background removal
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/briaai/RMBG-1.4",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${HF_TOKEN}`,
-        },
-        body: imageBlob,
-      }
-    );
+    const hf = new InferenceClient(HF_TOKEN);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("HuggingFace API error:", response.status, errorText);
-      
-      if (response.status === 503) {
-        return new Response(
-          JSON.stringify({ error: "Model is loading. Please try again in a few seconds." }),
-          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      throw new Error(`HuggingFace API error: ${response.status}`);
-    }
-
-    const resultBlob = await response.blob();
+    const resultBlob = await hf.imageToImage({
+      model: "briaai/RMBG-1.4",
+      inputs: imageBlob,
+    });
     const arrayBuffer = await resultBlob.arrayBuffer();
     const resultBase64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
     const resultUrl = `data:image/png;base64,${resultBase64}`;
