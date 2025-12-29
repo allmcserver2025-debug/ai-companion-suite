@@ -38,11 +38,11 @@ serve(async (req) => {
     }
     const imageBlob = new Blob([bytes], { type: "image/png" });
 
-    console.log("Removing background with RMBG-2.0 model");
+    console.log("Removing background with RMBG-1.4 model");
 
     // Use HuggingFace inference API for background removal
     const response = await fetch(
-      "https://api-inference.huggingface.co/models/briaai/RMBG-2.0",
+      "https://api-inference.huggingface.co/models/briaai/RMBG-1.4",
       {
         method: "POST",
         headers: {
