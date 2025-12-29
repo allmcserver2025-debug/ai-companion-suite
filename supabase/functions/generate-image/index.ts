@@ -42,7 +42,7 @@ serve(async (req) => {
 
     const image = await hf.textToImage({
       inputs: enhancedPrompt,
-      model: "black-forest-labs/FLUX.1-dev",
+      model: "black-forest-labs/FLUX.1-schnell",
     });
 
     // Convert blob to base64
