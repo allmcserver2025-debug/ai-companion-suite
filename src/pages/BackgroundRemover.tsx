@@ -82,7 +82,7 @@ const BackgroundRemover = () => {
             Background Remover
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Remove backgrounds from images instantly using AI — fast and reliable.
+            Remove backgrounds from images instantly using AI — 100% free, runs in your browser.
           </p>
         </div>
 
