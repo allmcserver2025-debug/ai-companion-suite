@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { HfInference } from 'https://esm.sh/@huggingface/inference@2.3.2';
+import { InferenceClient } from "https://esm.sh/@huggingface/inference";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +21,8 @@ serve(async (req) => {
       );
     }
     
-    console.log('Generating image with FLUX.1-dev model:', prompt);
-    
+    console.log('Generating image with FLUX.1-schnell model:', prompt);
+
     const HF_TOKEN = Deno.env.get('HUGGING_FACE_ACCESS_TOKEN');
     if (!HF_TOKEN) {
       console.error('HUGGING_FACE_ACCESS_TOKEN is not configured');
@@ -32,7 +32,7 @@ serve(async (req) => {
       );
     }
 
-    const hf = new HfInference(HF_TOKEN);
+    const hf = new InferenceClient(HF_TOKEN);
 
     // Enhance prompt with style
     let enhancedPrompt = prompt;
@@ -40,15 +40,21 @@ serve(async (req) => {
       enhancedPrompt = `${prompt}, ${style} style`;
     }
 
-    const image = await hf.textToImage({
+    const imageResult = (await hf.textToImage({
       inputs: enhancedPrompt,
       model: "black-forest-labs/FLUX.1-schnell",
-    });
+    })) as unknown;
 
-    // Convert blob to base64
-    const arrayBuffer = await image.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-    const imageUrl = `data:image/png;base64,${base64}`;
+    let imageUrl: string;
+    if (typeof imageResult === "string") {
+      imageUrl = imageResult.startsWith("data:image")
+        ? imageResult
+        : `data:image/png;base64,${imageResult}`;
+    } else {
+      const arrayBuffer = await (imageResult as Blob).arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      imageUrl = `data:image/png;base64,${base64}`;
+    }
 
     console.log('Image generated successfully');
 
