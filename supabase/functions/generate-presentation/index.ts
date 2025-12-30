@@ -101,52 +101,8 @@ IMPORTANT: Return ONLY valid JSON in this exact format, with no additional text:
       throw new Error('Failed to parse presentation data');
     }
 
-    // Generate images for each slide using Lovable AI image generation
-    console.log('Generating images for slides...');
-    const slidesWithImages = await Promise.all(
-      presentationData.slides.map(async (slide: { title: string; content: string[]; speakerNotes: string; imagePrompt?: string }, index: number) => {
-        try {
-          console.log(`Generating image for slide ${index + 1}: ${slide.imagePrompt || slide.title}`);
-          
-          const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'google/gemini-2.5-flash-image-preview',
-              messages: [
-                {
-                  role: 'user',
-                  content: `Generate a professional, high-quality presentation slide image: ${slide.imagePrompt || slide.title}. Make it clean, modern, and suitable for a ${style} style presentation. No text in the image.`
-                }
-              ],
-              modalities: ['image', 'text']
-            }),
-          });
-
-          if (imageResponse.ok) {
-            const imageData = await imageResponse.json();
-            const imageUrl = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-            
-            if (imageUrl) {
-              console.log(`Image generated successfully for slide ${index + 1}`);
-              return { ...slide, imageBase64: imageUrl };
-            }
-          } else {
-            console.error(`Failed to generate image for slide ${index + 1}:`, await imageResponse.text());
-          }
-        } catch (imgError) {
-          console.error(`Error generating image for slide ${index + 1}:`, imgError);
-        }
-        
-        // Return slide without image if generation fails
-        return slide;
-      })
-    );
-
-    presentationData.slides = slidesWithImages;
+    // Return slides without images to minimize API costs
+    console.log('Presentation content generated successfully');
 
     return new Response(
       JSON.stringify(presentationData),
